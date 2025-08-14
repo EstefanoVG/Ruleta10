@@ -1,4 +1,8 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ruleta D10</title>
 <style>
   :root{ --fg:#fff; --muted:#2a2a2a; --gold1:#C9A227; --gold2:#E6C14E; --gold3:#B8891A; }
@@ -20,7 +24,21 @@
   #admin .hint{opacity:.75;font-size:.9rem}
   .confetti{position:fixed;inset:0;pointer-events:none;display:grid;place-items:center;animation:fade .8s ease forwards}
   @keyframes fade{from{opacity:1}to{opacity:0}}
+
+  /* Estilo del título con Bodoni Moda */
+  h1 {
+    font-family: 'Bodoni Moda', serif;
+    font-weight: 600;
+    font-size: clamp(28px, 5vw, 48px);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 18px;
+  }
 </style>
+
+<!-- Fuente Bodoni Moda -->
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@600&display=swap" rel="stylesheet">
+
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0b0b0b">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -34,9 +52,10 @@
     });
   }
 </script>
-</head><body>
+</head>
+<body>
 <div class="wrap">
-  <h1 style="margin:0 0 18px;letter-spacing:.02em">Ruleta Depa10</h1>
+  <h1>Ruleta Departamento 10</h1>
   <div class="wheel-box">
     <div id="pointer">▼</div>
     <canvas id="wheel" width="520" height="520"></canvas>
@@ -133,4 +152,5 @@
   drawWheel();meta.textContent=`Quedan ${state.spins} tiradas`;spinBtn.addEventListener('click',spin);window.addEventListener('resize',drawWheel);
 })();
 </script>
-</body></html>
+</body>
+</html>
