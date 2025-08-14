@@ -1,0 +1,136 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ruleta D10</title>
+<style>
+  :root{ --fg:#fff; --muted:#2a2a2a; --gold1:#C9A227; --gold2:#E6C14E; --gold3:#B8891A; }
+  body{margin:0;background:#0b0b0b;color:var(--fg);font-family:Poppins,system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  .wrap{max-width:900px;margin:5vh auto;padding:0 16px;text-align:center}
+  .wheel-box{width:min(82vw,520px);margin:0 auto 8px;position:relative}
+  #pointer{position:absolute;top:-10px;left:50%;transform:translateX(-50%);font-size:22px;color:var(--gold2);text-shadow:0 0 6px rgba(230,193,78,.6);pointer-events:none;z-index:6}
+  #wheel{width:100%;height:auto;display:block;background:#0f0f0f;border-radius:50%;box-shadow:0 0 0 1px #191919 inset,0 10px 40px rgba(0,0,0,.55);transform:rotate(0deg);transition:transform 4.5s cubic-bezier(.17,.89,.32,1.28);will-change:transform}
+  .btn{background:linear-gradient(90deg,var(--gold3),var(--gold1),var(--gold2),var(--gold1));color:#111;font-weight:900;letter-spacing:.04em;border:none;border-radius:14px;padding:.9rem 1.4rem;cursor:pointer;box-shadow:0 6px 24px rgba(233,196,106,.25)}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
+  .ghost{background:#151515;color:#fff;border:1px solid var(--muted);box-shadow:none}
+  #result{min-height:2.6rem;margin:.9rem 0 .2rem;font-size:clamp(18px,3.8vw,28px);font-weight:900}
+  #meta{opacity:.85;font-size:clamp(13px,2.6vw,16px)}
+  #admin{margin:1rem auto 0;max-width:900px;text-align:left;background:#0f0f0f;border:1px solid var(--muted);border-radius:14px;padding:1rem;display:none}
+  #admin .row{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;margin:.55rem 0}
+  #admin textarea,#admin input{background:#121212;color:#fff;border:1px solid #262626;border-radius:10px;padding:.6rem .7rem;font-weight:600}
+  #admin textarea{width:100%;font-family:inherit;font-size:14px;line-height:1.35}
+  #admin label{font-size:14px;opacity:.95}
+  #admin .hint{opacity:.75;font-size:.9rem}
+  .confetti{position:fixed;inset:0;pointer-events:none;display:grid;place-items:center;animation:fade .8s ease forwards}
+  @keyframes fade{from{opacity:1}to{opacity:0}}
+</style>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0b0b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Ruleta D10">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('sw.js').catch(console.error);
+    });
+  }
+</script>
+</head><body>
+<div class="wrap">
+  <h1 style="margin:0 0 18px;letter-spacing:.02em">Ruleta Depa10</h1>
+  <div class="wheel-box">
+    <div id="pointer">▼</div>
+    <canvas id="wheel" width="520" height="520"></canvas>
+  </div>
+  <button id="spinBtn" class="btn">SPIN</button>
+  <div id="result"></div>
+  <div id="meta"></div>
+  <div id="admin">
+    <div class="row">
+      <label>Premios (una línea: <b>texto | peso</b>)</label>
+      <textarea id="itemsInput" rows="7"></textarea>
+      <div class="hint">“Peso” = probabilidad relativa (más grande = más probable).</div>
+    </div>
+    <div class="row">
+      <label>Tiradas</label><input id="spinsInput" type="number" min="0" step="1"/>
+      <label>Cooldown (s)</label><input id="coolInput" type="number" min="0" step="1"/>
+    </div>
+    <div class="row">
+      <label><input id="repeatChk" type="checkbox"/> Permitir repetir consecutivo</label>
+    </div>
+    <div class="row">
+      <button id="saveBtn" class="btn">Guardar</button>
+      <button id="resetBtn" class="btn ghost">Reset por defecto</button>
+      <button id="closeAdmin" class="btn ghost">Cerrar</button>
+    </div>
+    <div class="hint">Abrir admin: triple-tap o mantener 800 ms sobre la ruleta.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const DEFAULTS={prizes:[
+    {text:"Nada, sigue intentando",weight:10},
+    {text:"DJ pick (canción)",weight:6},
+    {text:"$20 off Carajillo",weight:4},
+    {text:"Mini-shot (30 ml)",weight:4},
+    {text:"Trago firma gratis",weight:2},
+    {text:"Vaso con logo",weight:1}
+  ],spins:30,cooldown:5,allowRepeat:false};
+  const TARGET_POINTER_DEG=270; // puntero arriba
+
+  let state={...DEFAULTS,angle:0,lastIndex:null,busy:false};
+  try{const mem=JSON.parse(localStorage.getItem('d10_lucky_full')||'{}');state={...state,...mem,angle:0,busy:false};if(!Array.isArray(state.prizes)||!state.prizes.length)state.prizes=DEFAULTS.prizes;}catch(e){}
+  const save=()=>{try{localStorage.setItem('d10_lucky_full',JSON.stringify({prizes:state.prizes,spins:state.spins,cooldown:state.cooldown,allowRepeat:state.allowRepeat,lastIndex:state.lastIndex}))}catch(e){}};
+
+  const $=s=>document.querySelector(s);
+  const cvs=$('#wheel'),ctx=cvs.getContext('2d'),spinBtn=$('#spinBtn'),result=$('#result'),meta=$('#meta');
+
+  function drawWheel(){
+    const W=cvs.width,R=W/2;ctx.clearRect(0,0,W,W);ctx.save();ctx.translate(R,R);
+    const n=state.prizes.length,step=(Math.PI*2)/n,cols=['#1f1f1f','#151515','#1a1a1a','#101010'];
+    for(let i=0;i<n;i++){
+      ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,R,i*step,(i+1)*step);ctx.closePath();ctx.fillStyle=cols[i%cols.length];ctx.fill();
+      const mid=i*step+step/2,txt=state.prizes[i].text,maxW=R*0.72;let fs=Math.min(16,Math.max(10,Math.floor(W*0.028)));
+      ctx.save();ctx.rotate(mid);ctx.translate(R*0.55,0);ctx.font=`800 ${fs}px Poppins, system-ui, sans-serif`;
+      while(ctx.measureText(txt).width>maxW&&fs>9){fs-=0.5;ctx.font=`800 ${fs}px Poppins, system-ui, sans-serif`}
+      ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor='rgba(0,0,0,.6)';ctx.shadowBlur=4;ctx.fillText(txt,0,0);ctx.restore();
+    } ctx.restore();
+  }
+
+  function weightedIndex(){const sum=state.prizes.reduce((a,b)=>a+(+b.weight||0),0)||1;let r=Math.random()*sum;for(let i=0;i<state.prizes.length;i++){r-=(+state.prizes[i].weight||0);if(r<=0)return i}return state.prizes.length-1}
+  function pickIndex(){let idx=weightedIndex();if(!state.allowRepeat&&state.lastIndex!==null&&state.prizes.length>1){if(idx===state.lastIndex)idx=(idx+1)%state.prizes.length}return idx}
+
+  function spin(){
+    if(state.busy)return;if(state.spins<=0){result.textContent='Sin tiradas disponibles';return}
+    state.busy=true;spinBtn.disabled=true;result.textContent='Girando…';
+    const n=state.prizes.length,slice=360/n,idx=pickIndex();
+    const centerDeg=idx*slice+slice/2, current=((state.angle%360)+360)%360;
+    let delta=360*6 + (TARGET_POINTER_DEG - current - centerDeg);
+    while(delta<0)delta+=360;
+    state.angle+=delta;cvs.style.transform=`rotate(${state.angle}deg)`;
+    const done=()=>{cvs.removeEventListener('transitionend',done);state.spins-=1;state.lastIndex=idx;save();const prize=state.prizes[idx].text;confetti();result.innerHTML=`🎉 <b>${prize}</b>`;
+      let left=state.cooldown;meta.textContent=`Quedan ${state.spins} tiradas • Cooldown ${left}s`;
+      const cd=setInterval(()=>{left--;if(left<=0){clearInterval(cd);state.busy=false;spinBtn.disabled=state.spins<=0;meta.textContent=`Quedan ${state.spins} tiradas`;}else{meta.textContent=`Quedan ${state.spins} tiradas • Cooldown ${left}s`;}},
+      1000)};
+    cvs.addEventListener('transitionend',done,{once:true});setTimeout(done,4800);
+  }
+
+  function confetti(){const c=document.createElement('div');c.className='confetti';c.textContent='🎊';document.body.appendChild(c);setTimeout(()=>c.remove(),900)}
+
+  // Admin
+  const admin=$('#admin'),itemsInput=$('#itemsInput'),spinsInput=$('#spinsInput'),coolInput=$('#coolInput'),repeatChk=$('#repeatChk');
+  const saveBtn=$('#saveBtn'),resetBtn=$('#resetBtn'),closeAdmin=$('#closeAdmin');
+  function openAdmin(b){admin.style.display=b?'block':'none'}
+  function sync(){itemsInput.value=state.prizes.map(it=>`${it.text} | ${+it.weight||1}`).join('\n');spinsInput.value=state.spins;coolInput.value=state.cooldown;repeatChk.checked=!!state.allowRepeat}
+  function parseItems(txt){const lines=txt.split('\n').map(s=>s.trim()).filter(Boolean),out=[];for(const ln of lines){const [t,w]=ln.split('|').map(s=>s?.trim());if(!t)continue;out.push({text:t,weight:Math.max(1,parseInt(w||'1',10)||1)})}return out.length?out:DEFAULTS.prizes}
+  saveBtn.addEventListener('click',()=>{state.prizes=parseItems(itemsInput.value);state.spins=Math.max(0,parseInt(spinsInput.value||'0',10));state.cooldown=Math.max(0,parseInt(coolInput.value||'0',10));state.allowRepeat=!!repeatChk.checked;save();drawWheel();sync();meta.textContent=`Quedan ${state.spins} tiradas`});
+  resetBtn.addEventListener('click',()=>{state={...DEFAULTS,angle:0,lastIndex:null,busy:false};save();drawWheel();sync();result.textContent='';meta.textContent=`Quedan ${state.spins} tiradas`});
+  closeAdmin.addEventListener('click',()=>openAdmin(false));
+  let taps=0,lastTap=0,pressTimer=null;function triple(){const now=Date.now();taps=(now-lastTap<600)?(taps+1):1;lastTap=now;if(taps>=3){openAdmin(admin.style.display==='none');sync();taps=0}}function pressStart(){pressTimer=setTimeout(()=>{openAdmin(true);sync()},800)}function pressEnd(){clearTimeout(pressTimer)}
+  const box=document.querySelector('.wheel-box');box.addEventListener('click',triple);['mousedown','touchstart'].forEach(e=>box.addEventListener(e,pressStart));['mouseup','mouseleave','touchend','touchcancel'].forEach(e=>box.addEventListener(e,pressEnd));
+
+  // Init
+  drawWheel();meta.textContent=`Quedan ${state.spins} tiradas`;spinBtn.addEventListener('click',spin);window.addEventListener('resize',drawWheel);
+})();
+</script>
+</body></html>
